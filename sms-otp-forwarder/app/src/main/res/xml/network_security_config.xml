@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Allows both HTTPS and plain HTTP endpoints. HTTPS is strongly recommended
+     for forwarding OTPs; cleartext is permitted here only for local/testing APIs. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

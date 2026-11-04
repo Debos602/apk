@@ -10,24 +10,6 @@ import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 
-/**
- * Extracts the OTP from a message body and POSTs a JSON payload to the
- * configured API. Runs off the main thread via WorkManager, which retries
- * automatically on transient failures (no network, 5xx).
- *
- * OTP detection handles two formats:
- *   1. Numeric codes          e.g. "Your code is 123456"   (configured regex)
- *   2. Codes spelled in words e.g. "Four-Seven-Nine-Nine-One-Nine" -> "479919"
- *
- * Payload shape:
- * {
- *   "sender":    "VERIFY",
- *   "message":   "Your code is 123456",
- *   "otp":       "123456",
- *   "timestamp": 1730731200000,
- *   "device":    "Pixel 7"
- * }
- */
 class ForwardWorker(
     context: Context,
     params: WorkerParameters
@@ -104,13 +86,7 @@ class ForwardWorker(
         }
     }
 
-    /**
-     * Returns the OTP, or null if none found.
-     * Tries the configured numeric regex first, then falls back to an OTP
-     * written out in English number-words.
-     */
     private fun extractOtp(body: String, regex: String): String? {
-        // 1) Numeric code via the configured regex (default: 4–8 digits).
         try {
             val m = Regex(regex).find(body)
             if (m != null) {
@@ -120,15 +96,9 @@ class ForwardWorker(
         } catch (e: Exception) {
             Log.w(TAG, "Bad OTP regex, trying spelled-out words", e)
         }
-        // 2) Spelled-out code, e.g. "Four-Seven-Nine-Nine-One-Nine" -> "479919".
         return extractSpelledOutOtp(body)
     }
 
-    /**
-     * Finds the longest run of consecutive English digit-words in the message
-     * and joins them into a numeric string. Separators (spaces, hyphens, etc.)
-     * don't matter. Returns null if no run of at least [minLen] digits is found.
-     */
     private fun extractSpelledOutOtp(body: String, minLen: Int = 4): String? {
         val tokens = body.lowercase().split(Regex("[^a-z]+")).filter { it.isNotEmpty() }
         var best = StringBuilder()

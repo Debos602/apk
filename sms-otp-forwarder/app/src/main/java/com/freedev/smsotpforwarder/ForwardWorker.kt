@@ -15,6 +15,10 @@ import java.net.URL
  * configured API. Runs off the main thread via WorkManager, which retries
  * automatically on transient failures (no network, 5xx).
  *
+ * OTP detection handles two formats:
+ *   1. Numeric codes          e.g. "Your code is 123456"   (configured regex)
+ *   2. Codes spelled in words e.g. "Four-Seven-Nine-Nine-One-Nine" -> "479919"
+ *
  * Payload shape:
  * {
  *   "sender":    "VERIFY",
@@ -100,15 +104,46 @@ class ForwardWorker(
         }
     }
 
+    /**
+     * Returns the OTP, or null if none found.
+     * Tries the configured numeric regex first, then falls back to an OTP
+     * written out in English number-words.
+     */
     private fun extractOtp(body: String, regex: String): String? {
-        return try {
-            val m = Regex(regex).find(body) ?: return null
-            // Prefer the first capture group if present, else the whole match.
-            (m.groupValues.getOrNull(1)?.takeIf { it.isNotEmpty() } ?: m.value)
+        // 1) Numeric code via the configured regex (default: 4–8 digits).
+        try {
+            val m = Regex(regex).find(body)
+            if (m != null) {
+                val v = m.groupValues.getOrNull(1)?.takeIf { it.isNotEmpty() } ?: m.value
+                if (v.isNotEmpty()) return v
+            }
         } catch (e: Exception) {
-            Log.w(TAG, "Bad OTP regex, forwarding without OTP", e)
-            null
+            Log.w(TAG, "Bad OTP regex, trying spelled-out words", e)
         }
+        // 2) Spelled-out code, e.g. "Four-Seven-Nine-Nine-One-Nine" -> "479919".
+        return extractSpelledOutOtp(body)
+    }
+
+    /**
+     * Finds the longest run of consecutive English digit-words in the message
+     * and joins them into a numeric string. Separators (spaces, hyphens, etc.)
+     * don't matter. Returns null if no run of at least [minLen] digits is found.
+     */
+    private fun extractSpelledOutOtp(body: String, minLen: Int = 4): String? {
+        val tokens = body.lowercase().split(Regex("[^a-z]+")).filter { it.isNotEmpty() }
+        var best = StringBuilder()
+        var current = StringBuilder()
+        for (t in tokens) {
+            val digit = WORD_TO_DIGIT[t]
+            if (digit != null) {
+                current.append(digit)
+            } else {
+                if (current.length > best.length) best = StringBuilder(current)
+                current = StringBuilder()
+            }
+        }
+        if (current.length > best.length) best = current
+        return best.toString().takeIf { it.length >= minLen }
     }
 
     companion object {
@@ -117,5 +152,18 @@ class ForwardWorker(
         const val KEY_SENDER = "sender"
         const val KEY_BODY = "body"
         const val KEY_TIME = "time"
+
+        private val WORD_TO_DIGIT = mapOf(
+            "zero" to '0',
+            "one" to '1',
+            "two" to '2',
+            "three" to '3',
+            "four" to '4',
+            "five" to '5',
+            "six" to '6',
+            "seven" to '7',
+            "eight" to '8',
+            "nine" to '9'
+        )
     }
 }
